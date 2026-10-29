@@ -29,6 +29,7 @@ const (
 	KeyType_EC_P384              KeyType = 2
 	KeyType_RSA_2048             KeyType = 3
 	KeyType_RSA_4096             KeyType = 4
+	KeyType_ML_DSA_65            KeyType = 5
 )
 
 // Enum value maps for KeyType.
@@ -39,6 +40,7 @@ var (
 		2: "EC_P384",
 		3: "RSA_2048",
 		4: "RSA_4096",
+		5: "ML_DSA_65",
 	}
 	KeyType_value = map[string]int32{
 		"UNSPECIFIED_KEY_TYPE": 0,
@@ -46,6 +48,7 @@ var (
 		"EC_P384":              2,
 		"RSA_2048":             3,
 		"RSA_4096":             4,
+		"ML_DSA_65":            5,
 	}
 )
 
@@ -516,7 +519,8 @@ type SignDataRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Required. The ID of the key to use to sign the data.
 	KeyId string `protobuf:"bytes,1,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
-	// Required. The data to sign.
+	// Required. The data to sign. For mldsa_options this is the original
+	// message, not a digest. Hash/PSS options retain their existing semantics.
 	Data []byte `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
 	// Required. The signature options. The PSS options are only valid
 	// for RSA keys.
@@ -525,6 +529,7 @@ type SignDataRequest struct {
 	//
 	//	*SignDataRequest_HashAlgorithm
 	//	*SignDataRequest_PssOptions
+	//	*SignDataRequest_MldsaOptions
 	SignerOpts    isSignDataRequest_SignerOpts `protobuf_oneof:"signer_opts"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -599,6 +604,15 @@ func (x *SignDataRequest) GetPssOptions() *SignDataRequest_PSSOptions {
 	return nil
 }
 
+func (x *SignDataRequest) GetMldsaOptions() *SignDataRequest_MLDSAOptions {
+	if x != nil {
+		if x, ok := x.SignerOpts.(*SignDataRequest_MldsaOptions); ok {
+			return x.MldsaOptions
+		}
+	}
+	return nil
+}
+
 type isSignDataRequest_SignerOpts interface {
 	isSignDataRequest_SignerOpts()
 }
@@ -611,9 +625,15 @@ type SignDataRequest_PssOptions struct {
 	PssOptions *SignDataRequest_PSSOptions `protobuf:"bytes,4,opt,name=pss_options,json=pssOptions,proto3,oneof"`
 }
 
+type SignDataRequest_MldsaOptions struct {
+	MldsaOptions *SignDataRequest_MLDSAOptions `protobuf:"bytes,5,opt,name=mldsa_options,json=mldsaOptions,proto3,oneof"`
+}
+
 func (*SignDataRequest_HashAlgorithm) isSignDataRequest_SignerOpts() {}
 
 func (*SignDataRequest_PssOptions) isSignDataRequest_SignerOpts() {}
+
+func (*SignDataRequest_MldsaOptions) isSignDataRequest_SignerOpts() {}
 
 type SignDataResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -669,6 +689,53 @@ func (x *SignDataResponse) GetKeyFingerprint() string {
 	return ""
 }
 
+// Pure ML-DSA: data is the original message, never a prehash. Only valid
+// with ML_DSA_65 keys. Context is optional and at most 255 bytes.
+// An empty context is used for X.509 and TLS signatures.
+type SignDataRequest_MLDSAOptions struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Context       []byte                 `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SignDataRequest_MLDSAOptions) Reset() {
+	*x = SignDataRequest_MLDSAOptions{}
+	mi := &file_spire_plugin_server_keymanager_v1_keymanager_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SignDataRequest_MLDSAOptions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SignDataRequest_MLDSAOptions) ProtoMessage() {}
+
+func (x *SignDataRequest_MLDSAOptions) ProtoReflect() protoreflect.Message {
+	mi := &file_spire_plugin_server_keymanager_v1_keymanager_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SignDataRequest_MLDSAOptions.ProtoReflect.Descriptor instead.
+func (*SignDataRequest_MLDSAOptions) Descriptor() ([]byte, []int) {
+	return file_spire_plugin_server_keymanager_v1_keymanager_proto_rawDescGZIP(), []int{7, 0}
+}
+
+func (x *SignDataRequest_MLDSAOptions) GetContext() []byte {
+	if x != nil {
+		return x.Context
+	}
+	return nil
+}
+
 type SignDataRequest_PSSOptions struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Required. The salt length.
@@ -681,7 +748,7 @@ type SignDataRequest_PSSOptions struct {
 
 func (x *SignDataRequest_PSSOptions) Reset() {
 	*x = SignDataRequest_PSSOptions{}
-	mi := &file_spire_plugin_server_keymanager_v1_keymanager_proto_msgTypes[9]
+	mi := &file_spire_plugin_server_keymanager_v1_keymanager_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -693,7 +760,7 @@ func (x *SignDataRequest_PSSOptions) String() string {
 func (*SignDataRequest_PSSOptions) ProtoMessage() {}
 
 func (x *SignDataRequest_PSSOptions) ProtoReflect() protoreflect.Message {
-	mi := &file_spire_plugin_server_keymanager_v1_keymanager_proto_msgTypes[9]
+	mi := &file_spire_plugin_server_keymanager_v1_keymanager_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -706,7 +773,7 @@ func (x *SignDataRequest_PSSOptions) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignDataRequest_PSSOptions.ProtoReflect.Descriptor instead.
 func (*SignDataRequest_PSSOptions) Descriptor() ([]byte, []int) {
-	return file_spire_plugin_server_keymanager_v1_keymanager_proto_rawDescGZIP(), []int{7, 0}
+	return file_spire_plugin_server_keymanager_v1_keymanager_proto_rawDescGZIP(), []int{7, 1}
 }
 
 func (x *SignDataRequest_PSSOptions) GetSaltLength() int32 {
@@ -747,13 +814,16 @@ const file_spire_plugin_server_keymanager_v1_keymanager_proto_rawDesc = "" +
 	"\x14GetPublicKeysRequest\"f\n" +
 	"\x15GetPublicKeysResponse\x12M\n" +
 	"\vpublic_keys\x18\x01 \x03(\v2,.spire.plugin.server.keymanager.v1.PublicKeyR\n" +
-	"publicKeys\"\x91\x03\n" +
+	"publicKeys\"\xa3\x04\n" +
 	"\x0fSignDataRequest\x12\x15\n" +
 	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x12\n" +
 	"\x04data\x18\x02 \x01(\fR\x04data\x12Y\n" +
 	"\x0ehash_algorithm\x18\x03 \x01(\x0e20.spire.plugin.server.keymanager.v1.HashAlgorithmH\x00R\rhashAlgorithm\x12`\n" +
 	"\vpss_options\x18\x04 \x01(\v2=.spire.plugin.server.keymanager.v1.SignDataRequest.PSSOptionsH\x00R\n" +
-	"pssOptions\x1a\x86\x01\n" +
+	"pssOptions\x12f\n" +
+	"\rmldsa_options\x18\x05 \x01(\v2?.spire.plugin.server.keymanager.v1.SignDataRequest.MLDSAOptionsH\x00R\fmldsaOptions\x1a(\n" +
+	"\fMLDSAOptions\x12\x18\n" +
+	"\acontext\x18\x01 \x01(\fR\acontext\x1a\x86\x01\n" +
 	"\n" +
 	"PSSOptions\x12\x1f\n" +
 	"\vsalt_length\x18\x01 \x01(\x05R\n" +
@@ -762,13 +832,14 @@ const file_spire_plugin_server_keymanager_v1_keymanager_proto_rawDesc = "" +
 	"\vsigner_opts\"Y\n" +
 	"\x10SignDataResponse\x12\x1c\n" +
 	"\tsignature\x18\x01 \x01(\fR\tsignature\x12'\n" +
-	"\x0fkey_fingerprint\x18\x02 \x01(\tR\x0ekeyFingerprint*Y\n" +
+	"\x0fkey_fingerprint\x18\x02 \x01(\tR\x0ekeyFingerprint*h\n" +
 	"\aKeyType\x12\x18\n" +
 	"\x14UNSPECIFIED_KEY_TYPE\x10\x00\x12\v\n" +
 	"\aEC_P256\x10\x01\x12\v\n" +
 	"\aEC_P384\x10\x02\x12\f\n" +
 	"\bRSA_2048\x10\x03\x12\f\n" +
-	"\bRSA_4096\x10\x04*\xb7\x01\n" +
+	"\bRSA_4096\x10\x04\x12\r\n" +
+	"\tML_DSA_65\x10\x05*\xb7\x01\n" +
 	"\rHashAlgorithm\x12\x1e\n" +
 	"\x1aUNSPECIFIED_HASH_ALGORITHM\x10\x00\x12\n" +
 	"\n" +
@@ -808,20 +879,21 @@ func file_spire_plugin_server_keymanager_v1_keymanager_proto_rawDescGZIP() []byt
 }
 
 var file_spire_plugin_server_keymanager_v1_keymanager_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_spire_plugin_server_keymanager_v1_keymanager_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_spire_plugin_server_keymanager_v1_keymanager_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_spire_plugin_server_keymanager_v1_keymanager_proto_goTypes = []any{
-	(KeyType)(0),                       // 0: spire.plugin.server.keymanager.v1.KeyType
-	(HashAlgorithm)(0),                 // 1: spire.plugin.server.keymanager.v1.HashAlgorithm
-	(*PublicKey)(nil),                  // 2: spire.plugin.server.keymanager.v1.PublicKey
-	(*GenerateKeyRequest)(nil),         // 3: spire.plugin.server.keymanager.v1.GenerateKeyRequest
-	(*GenerateKeyResponse)(nil),        // 4: spire.plugin.server.keymanager.v1.GenerateKeyResponse
-	(*GetPublicKeyRequest)(nil),        // 5: spire.plugin.server.keymanager.v1.GetPublicKeyRequest
-	(*GetPublicKeyResponse)(nil),       // 6: spire.plugin.server.keymanager.v1.GetPublicKeyResponse
-	(*GetPublicKeysRequest)(nil),       // 7: spire.plugin.server.keymanager.v1.GetPublicKeysRequest
-	(*GetPublicKeysResponse)(nil),      // 8: spire.plugin.server.keymanager.v1.GetPublicKeysResponse
-	(*SignDataRequest)(nil),            // 9: spire.plugin.server.keymanager.v1.SignDataRequest
-	(*SignDataResponse)(nil),           // 10: spire.plugin.server.keymanager.v1.SignDataResponse
-	(*SignDataRequest_PSSOptions)(nil), // 11: spire.plugin.server.keymanager.v1.SignDataRequest.PSSOptions
+	(KeyType)(0),                         // 0: spire.plugin.server.keymanager.v1.KeyType
+	(HashAlgorithm)(0),                   // 1: spire.plugin.server.keymanager.v1.HashAlgorithm
+	(*PublicKey)(nil),                    // 2: spire.plugin.server.keymanager.v1.PublicKey
+	(*GenerateKeyRequest)(nil),           // 3: spire.plugin.server.keymanager.v1.GenerateKeyRequest
+	(*GenerateKeyResponse)(nil),          // 4: spire.plugin.server.keymanager.v1.GenerateKeyResponse
+	(*GetPublicKeyRequest)(nil),          // 5: spire.plugin.server.keymanager.v1.GetPublicKeyRequest
+	(*GetPublicKeyResponse)(nil),         // 6: spire.plugin.server.keymanager.v1.GetPublicKeyResponse
+	(*GetPublicKeysRequest)(nil),         // 7: spire.plugin.server.keymanager.v1.GetPublicKeysRequest
+	(*GetPublicKeysResponse)(nil),        // 8: spire.plugin.server.keymanager.v1.GetPublicKeysResponse
+	(*SignDataRequest)(nil),              // 9: spire.plugin.server.keymanager.v1.SignDataRequest
+	(*SignDataResponse)(nil),             // 10: spire.plugin.server.keymanager.v1.SignDataResponse
+	(*SignDataRequest_MLDSAOptions)(nil), // 11: spire.plugin.server.keymanager.v1.SignDataRequest.MLDSAOptions
+	(*SignDataRequest_PSSOptions)(nil),   // 12: spire.plugin.server.keymanager.v1.SignDataRequest.PSSOptions
 }
 var file_spire_plugin_server_keymanager_v1_keymanager_proto_depIdxs = []int32{
 	0,  // 0: spire.plugin.server.keymanager.v1.PublicKey.type:type_name -> spire.plugin.server.keymanager.v1.KeyType
@@ -830,21 +902,22 @@ var file_spire_plugin_server_keymanager_v1_keymanager_proto_depIdxs = []int32{
 	2,  // 3: spire.plugin.server.keymanager.v1.GetPublicKeyResponse.public_key:type_name -> spire.plugin.server.keymanager.v1.PublicKey
 	2,  // 4: spire.plugin.server.keymanager.v1.GetPublicKeysResponse.public_keys:type_name -> spire.plugin.server.keymanager.v1.PublicKey
 	1,  // 5: spire.plugin.server.keymanager.v1.SignDataRequest.hash_algorithm:type_name -> spire.plugin.server.keymanager.v1.HashAlgorithm
-	11, // 6: spire.plugin.server.keymanager.v1.SignDataRequest.pss_options:type_name -> spire.plugin.server.keymanager.v1.SignDataRequest.PSSOptions
-	1,  // 7: spire.plugin.server.keymanager.v1.SignDataRequest.PSSOptions.hash_algorithm:type_name -> spire.plugin.server.keymanager.v1.HashAlgorithm
-	3,  // 8: spire.plugin.server.keymanager.v1.KeyManager.GenerateKey:input_type -> spire.plugin.server.keymanager.v1.GenerateKeyRequest
-	5,  // 9: spire.plugin.server.keymanager.v1.KeyManager.GetPublicKey:input_type -> spire.plugin.server.keymanager.v1.GetPublicKeyRequest
-	7,  // 10: spire.plugin.server.keymanager.v1.KeyManager.GetPublicKeys:input_type -> spire.plugin.server.keymanager.v1.GetPublicKeysRequest
-	9,  // 11: spire.plugin.server.keymanager.v1.KeyManager.SignData:input_type -> spire.plugin.server.keymanager.v1.SignDataRequest
-	4,  // 12: spire.plugin.server.keymanager.v1.KeyManager.GenerateKey:output_type -> spire.plugin.server.keymanager.v1.GenerateKeyResponse
-	6,  // 13: spire.plugin.server.keymanager.v1.KeyManager.GetPublicKey:output_type -> spire.plugin.server.keymanager.v1.GetPublicKeyResponse
-	8,  // 14: spire.plugin.server.keymanager.v1.KeyManager.GetPublicKeys:output_type -> spire.plugin.server.keymanager.v1.GetPublicKeysResponse
-	10, // 15: spire.plugin.server.keymanager.v1.KeyManager.SignData:output_type -> spire.plugin.server.keymanager.v1.SignDataResponse
-	12, // [12:16] is the sub-list for method output_type
-	8,  // [8:12] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	12, // 6: spire.plugin.server.keymanager.v1.SignDataRequest.pss_options:type_name -> spire.plugin.server.keymanager.v1.SignDataRequest.PSSOptions
+	11, // 7: spire.plugin.server.keymanager.v1.SignDataRequest.mldsa_options:type_name -> spire.plugin.server.keymanager.v1.SignDataRequest.MLDSAOptions
+	1,  // 8: spire.plugin.server.keymanager.v1.SignDataRequest.PSSOptions.hash_algorithm:type_name -> spire.plugin.server.keymanager.v1.HashAlgorithm
+	3,  // 9: spire.plugin.server.keymanager.v1.KeyManager.GenerateKey:input_type -> spire.plugin.server.keymanager.v1.GenerateKeyRequest
+	5,  // 10: spire.plugin.server.keymanager.v1.KeyManager.GetPublicKey:input_type -> spire.plugin.server.keymanager.v1.GetPublicKeyRequest
+	7,  // 11: spire.plugin.server.keymanager.v1.KeyManager.GetPublicKeys:input_type -> spire.plugin.server.keymanager.v1.GetPublicKeysRequest
+	9,  // 12: spire.plugin.server.keymanager.v1.KeyManager.SignData:input_type -> spire.plugin.server.keymanager.v1.SignDataRequest
+	4,  // 13: spire.plugin.server.keymanager.v1.KeyManager.GenerateKey:output_type -> spire.plugin.server.keymanager.v1.GenerateKeyResponse
+	6,  // 14: spire.plugin.server.keymanager.v1.KeyManager.GetPublicKey:output_type -> spire.plugin.server.keymanager.v1.GetPublicKeyResponse
+	8,  // 15: spire.plugin.server.keymanager.v1.KeyManager.GetPublicKeys:output_type -> spire.plugin.server.keymanager.v1.GetPublicKeysResponse
+	10, // 16: spire.plugin.server.keymanager.v1.KeyManager.SignData:output_type -> spire.plugin.server.keymanager.v1.SignDataResponse
+	13, // [13:17] is the sub-list for method output_type
+	9,  // [9:13] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_spire_plugin_server_keymanager_v1_keymanager_proto_init() }
@@ -855,6 +928,7 @@ func file_spire_plugin_server_keymanager_v1_keymanager_proto_init() {
 	file_spire_plugin_server_keymanager_v1_keymanager_proto_msgTypes[7].OneofWrappers = []any{
 		(*SignDataRequest_HashAlgorithm)(nil),
 		(*SignDataRequest_PssOptions)(nil),
+		(*SignDataRequest_MldsaOptions)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -862,7 +936,7 @@ func file_spire_plugin_server_keymanager_v1_keymanager_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_spire_plugin_server_keymanager_v1_keymanager_proto_rawDesc), len(file_spire_plugin_server_keymanager_v1_keymanager_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   10,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
