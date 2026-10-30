@@ -9,7 +9,9 @@ package bundleformat
 import (
 	"bytes"
 	"crypto"
+	"crypto/mldsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -126,30 +128,17 @@ func (b *Formatter) Format(format Format) ([]byte, error) {
 	}
 }
 
-// toJWKS converts to JWKS the current bundle.
+// toJWKS converts to JWKS the current bundle. ML-DSA authorities use RFC 9964
+// AKP entries because go-jose cannot marshal them; classical authorities keep
+// the existing go-jose representation.
 func (b *Formatter) toJWKS() ([]byte, error) {
-	var jwks jose.JSONWebKeySet
-
-	x509Authorities, jwtAuthorities, err := getAuthorities(b.bundle)
+	keys, err := b.entries("")
 	if err != nil {
 		return nil, err
 	}
-
-	for _, rootCA := range x509Authorities {
-		jwks.Keys = append(jwks.Keys, jose.JSONWebKey{
-			Key:          rootCA.PublicKey,
-			Certificates: []*x509.Certificate{rootCA},
-		})
-	}
-
-	for keyID, jwtSigningKey := range jwtAuthorities {
-		jwks.Keys = append(jwks.Keys, jose.JSONWebKey{
-			Key:   jwtSigningKey,
-			KeyID: keyID,
-		})
-	}
-
-	return json.Marshal(jwks)
+	return json.Marshal(struct {
+		Keys []any `json:"keys"`
+	}{Keys: keys})
 }
 
 // toPEM converts to PEM the current bundle.
@@ -169,16 +158,90 @@ func (b *Formatter) toPEM() ([]byte, error) {
 
 // toSPIFFEBundle converts to a SPIFFE bundle the current bundle.
 func (b *Formatter) toSPIFFEBundle() ([]byte, error) {
-	sb, err := spiffeBundleFromPluginProto(b.bundle)
+	keys, err := b.entries("use")
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert bundle: %w", err)
+		return nil, err
 	}
-	docBytes, err := sb.Marshal()
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal bundle: %w", err)
+	type document struct {
+		Keys        []any  `json:"keys"`
+		Sequence    uint64 `json:"spiffe_sequence,omitempty"`
+		RefreshHint int64  `json:"spiffe_refresh_hint,omitempty"`
 	}
+	return json.Marshal(document{
+		Keys:        keys,
+		Sequence:    b.bundle.SequenceNumber,
+		RefreshHint: b.bundle.RefreshHint,
+	})
+}
 
-	return docBytes, nil
+func (b *Formatter) entries(useMode string) ([]any, error) {
+	x509Authorities, jwtAuthorities, err := getAuthorities(b.bundle)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]any, 0, len(x509Authorities)+len(jwtAuthorities))
+	for _, rootCA := range x509Authorities {
+		if publicKey, ok := rootCA.PublicKey.(*mldsa.PublicKey); ok {
+			entry, err := akpEntry("", useMode, "x509-svid", publicKey, rootCA.Raw)
+			if err != nil {
+				return nil, err
+			}
+			keys = append(keys, entry)
+			continue
+		}
+		entry := jose.JSONWebKey{
+			Key:          rootCA.PublicKey,
+			Certificates: []*x509.Certificate{rootCA},
+		}
+		if useMode != "" {
+			entry.Use = "x509-svid"
+		}
+		keys = append(keys, entry)
+	}
+	for keyID, jwtSigningKey := range jwtAuthorities {
+		if publicKey, ok := jwtSigningKey.(*mldsa.PublicKey); ok {
+			entry, err := akpEntry(keyID, useMode, "jwt-svid", publicKey, nil)
+			if err != nil {
+				return nil, err
+			}
+			keys = append(keys, entry)
+			continue
+		}
+		entry := jose.JSONWebKey{Key: jwtSigningKey, KeyID: keyID}
+		if useMode != "" {
+			entry.Use = "jwt-svid"
+		}
+		keys = append(keys, entry)
+	}
+	return keys, nil
+}
+
+type akpJWK struct {
+	KeyType   string   `json:"kty"`
+	Algorithm string   `json:"alg"`
+	KeyID     string   `json:"kid,omitempty"`
+	Public    string   `json:"pub"`
+	Use       string   `json:"use,omitempty"`
+	CertChain []string `json:"x5c,omitempty"`
+}
+
+func akpEntry(keyID, useMode, use string, publicKey *mldsa.PublicKey, certificate []byte) (akpJWK, error) {
+	if publicKey == nil || publicKey.Parameters() != mldsa.MLDSA65() {
+		return akpJWK{}, errors.New("AKP authority must be ML-DSA-65")
+	}
+	entry := akpJWK{
+		KeyType:   "AKP",
+		Algorithm: "ML-DSA-65",
+		KeyID:     keyID,
+		Public:    base64.RawURLEncoding.EncodeToString(publicKey.Bytes()),
+	}
+	if useMode != "" {
+		entry.Use = use
+	}
+	if certificate != nil {
+		entry.CertChain = []string{base64.StdEncoding.EncodeToString(certificate)}
+	}
+	return entry, nil
 }
 
 // FormatBundle returns the bundle in the form of a slice of bytes in

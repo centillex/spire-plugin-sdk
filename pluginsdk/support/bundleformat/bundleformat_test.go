@@ -1,11 +1,16 @@
 package bundleformat
 
 import (
+	"crypto/mldsa"
+	"crypto/rand"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
 	"math"
+	"math/big"
 	"testing"
+	"time"
 
 	"github.com/spiffe/spire-plugin-sdk/proto/spire/plugin/types"
 	"github.com/stretchr/testify/require"
@@ -161,4 +166,54 @@ func TestStringConversion(t *testing.T) {
 			require.Equal(t, tt.formatString, format.String())
 		})
 	}
+}
+
+func TestMLDSAFormats(t *testing.T) {
+	key, err := mldsa.GenerateKey(mldsa.MLDSA65())
+	require.NoError(t, err)
+	now := time.Now()
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "pq bundle CA"},
+		NotBefore:             now.Add(-time.Minute),
+		NotAfter:              now.Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, key.Public(), key)
+	require.NoError(t, err)
+	keyPKIX, err := x509.MarshalPKIXPublicKey(key.Public())
+	require.NoError(t, err)
+
+	bundle := &types.Bundle{
+		TrustDomain:     "pq.example",
+		X509Authorities: []*types.X509Certificate{{Asn1: der}},
+		JwtAuthorities:  []*types.JWTKey{{KeyId: "jwt-key", PublicKey: keyPKIX}},
+		RefreshHint:     60,
+		SequenceNumber:  7,
+	}
+	formatter := NewFormatter(bundle)
+
+	spiffeBytes, err := formatter.Format(SPIFFE)
+	require.NoError(t, err)
+	require.Contains(t, string(spiffeBytes), `"kty":"AKP"`)
+	require.Contains(t, string(spiffeBytes), `"alg":"ML-DSA-65"`)
+	require.Contains(t, string(spiffeBytes), `"use":"x509-svid"`)
+	require.Contains(t, string(spiffeBytes), `"use":"jwt-svid"`)
+	require.NotContains(t, string(spiffeBytes), `"priv"`)
+
+	jwksBytes, err := formatter.Format(JWKS)
+	require.NoError(t, err)
+	require.Contains(t, string(jwksBytes), `"kty":"AKP"`)
+	require.NotContains(t, string(jwksBytes), `"use"`)
+
+	pemBytes, err := formatter.Format(PEM)
+	require.NoError(t, err)
+	block, _ := pem.Decode(pemBytes)
+	require.NotNil(t, block)
+	cert, err := x509.ParseCertificate(block.Bytes)
+	require.NoError(t, err)
+	_, ok := cert.PublicKey.(*mldsa.PublicKey)
+	require.True(t, ok)
 }
